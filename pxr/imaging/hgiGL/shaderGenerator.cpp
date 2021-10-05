@@ -23,7 +23,6 @@
 //
 
 #include "pxr/imaging/hgiGL/shaderGenerator.h"
-#include "pxr/imaging/hgi/tokens.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -33,8 +32,7 @@ _GetMacroBlob()
     // Allows metal and GL to both handle out function params.
     // On the metal side, the ref(space,type) parameter defines
     // if items are in device or thread domain.
-    const static std::string header =
-        "#define REF(space,type) inout type\n";
+    const static std::string header = R"(#define REF(space,type) inout type)";
     return header;
 }
 
@@ -48,7 +46,6 @@ HgiGLShaderGenerator::HgiGLShaderGenerator(
             _GetMacroBlob(), ""));
 
     _WriteTextures(descriptor.textures);
-    _WriteBuffers(descriptor.buffers);
     _WriteInOuts(descriptor.stageInputs, "in");
     _WriteConstantParams(descriptor.constantParams);
     _WriteInOuts(descriptor.stageOutputs, "out");
@@ -70,26 +67,6 @@ HgiGLShaderGenerator::_WriteTextures(
                 i,
                 textureDescription.dimensions,
                 textureDescription.format,
-                attrs));
-    }
-}
-
-void
-HgiGLShaderGenerator::_WriteBuffers(
-    const HgiShaderFunctionBufferDescVector &buffers)
-{
-    //Extract buffer descriptors and add appropriate buffer sections
-    for(size_t i=0; i<buffers.size(); i++) {
-        const HgiShaderFunctionBufferDesc &bufferDescription = buffers[i];
-        const HgiShaderSectionAttributeVector attrs = {
-            HgiShaderSectionAttribute{"std430", ""},
-            HgiShaderSectionAttribute{"binding", std::to_string(i + 1)}};
-
-        GetShaderSections()->push_back(
-            std::make_unique<HgiGLBufferShaderSection>(
-                bufferDescription.nameInShader,
-                i + 1,
-                bufferDescription.type,
                 attrs));
     }
 }
@@ -121,33 +98,20 @@ HgiGLShaderGenerator::_WriteInOuts(
     const static std::set<std::string> takenOutParams {
         "gl_Position",
         "gl_FragColor",
-        "gl_FragDepth"
-    };
-    const static std::map<std::string, std::string> takenInParams {
-        { HgiShaderKeywordTokens->hdPosition, "gl_Postiion"},
-        { HgiShaderKeywordTokens->hdGlobalInvocationID, "gl_GlobalInvocationID"}
-    };
+        "gl_FragDepth"};
+    const static std::set<std::string> takenInParams {
+        "hd_Position"};
 
-    const bool in_qualifier = qualifier == "in";
-    const bool out_qualifier = qualifier == "out";
     for(const HgiShaderFunctionParamDesc &param : parameters) {
         //Skip writing out taken parameter names
-        const std::string &paramName = param.nameInShader;
-        if (out_qualifier &&
-                takenOutParams.find(paramName) != takenOutParams.end()) {
+        std::string paramName = param.nameInShader;
+        if(qualifier == "out" &&
+                takenOutParams.find(param.nameInShader) != takenOutParams.end()) {
             continue;
         }
-        if (in_qualifier) {
-            const std::string &role = param.role;
-            auto const& keyword = takenInParams.find(role);
-            if (keyword != takenInParams.end()) {
-                GetShaderSections()->push_back(
-                    std::make_unique<HgiGLKeywordShaderSection>(
-                        paramName,
-                        param.type,
-                        keyword->second));
-                continue;
-            }
+        if(qualifier == "in" &&
+                takenInParams.find(param.nameInShader) != takenInParams.end()) {
+            continue;
         }
 
         const HgiShaderSectionAttributeVector attrs {

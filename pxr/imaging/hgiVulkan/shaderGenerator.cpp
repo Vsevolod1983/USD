@@ -23,7 +23,6 @@
 //
 
 #include "pxr/imaging/hgiVulkan/shaderGenerator.h"
-#include "pxr/imaging/hgi/tokens.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -33,8 +32,7 @@ _GetMacroBlob()
     // Allows metal and GL to both handle out function params.
     // On the metal side, the ref(space,type) parameter defines
     // if items are in device or thread domain.
-    const static std::string header =
-        "#define REF(space,type) inout type\n";
+    const static std::string header = R"(#define REF(space,type) inout type)";
     return header;
 }
 
@@ -53,7 +51,7 @@ HgiVulkanShaderGenerator::HgiVulkanShaderGenerator(
     // In Vulkan buffers and textures cannot have the same binding index.
     _WriteConstantParams(descriptor.constantParams);
     _WriteTextures(descriptor.textures);
-    _WriteBuffers(descriptor.buffers);
+    /*XXX _WriteBuffers goes here XXX */
     _WriteInOuts(descriptor.stageInputs, "in");
     _WriteInOuts(descriptor.stageOutputs, "out");
 }
@@ -94,28 +92,6 @@ HgiVulkanShaderGenerator::_WriteTextures(
 }
 
 void
-HgiVulkanShaderGenerator::_WriteBuffers(
-    const HgiShaderFunctionBufferDescVector &buffers)
-{
-    //Extract buffer descriptors and add appropriate buffer sections
-    for(size_t i=0; i<buffers.size(); i++) {
-        const HgiShaderFunctionBufferDesc &bufferDescription = buffers[i];
-        const HgiShaderSectionAttributeVector attrs = {
-            HgiShaderSectionAttribute{"binding", std::to_string(_bindIndex)}};
-
-        GetShaderSections()->push_back(
-            std::make_unique<HgiVulkanBufferShaderSection>(
-                bufferDescription.nameInShader,
-                _bindIndex,
-                bufferDescription.type,
-                attrs));
-				
-        // In Vulkan buffers and textures cannot have the same binding index.
-        _bindIndex++;
-    }
-}
-
-void
 HgiVulkanShaderGenerator::_WriteInOuts(
     const HgiShaderFunctionParamDescVector &parameters,
     const std::string &qualifier) 
@@ -128,33 +104,18 @@ HgiVulkanShaderGenerator::_WriteInOuts(
     const static std::set<std::string> takenOutParams {
         "gl_Position",
         "gl_FragColor",
-        "gl_FragDepth"
-    };
-    const static std::map<std::string, std::string> takenInParams {
-        { HgiShaderKeywordTokens->hdPosition, "gl_Postiion"},
-        { HgiShaderKeywordTokens->hdGlobalInvocationID, "gl_GlobalInvocationID"}
-    };
+        "gl_FragDepth"};
+    const static std::set<std::string> takenInParams {
+        "hd_Position"};
 
-    const bool in_qualifier = qualifier == "in";
-    const bool out_qualifier = qualifier == "out";
     for(const HgiShaderFunctionParamDesc &param : parameters) {
         //Skip writing out taken parameter names
         const std::string &paramName = param.nameInShader;
-        if (out_qualifier &&
-                takenOutParams.find(paramName) != takenOutParams.end()) {
+        if(qualifier == "out" && takenOutParams.count(paramName) > 0) {
             continue;
         }
-        if (in_qualifier) {
-            const std::string &role = param.role;
-            auto const& keyword = takenInParams.find(role);
-            if (keyword != takenInParams.end()) {
-                GetShaderSections()->push_back(
-                    std::make_unique<HgiVulkanKeywordShaderSection>(
-                        paramName,
-                        param.type,
-                        keyword->second));
-                continue;
-            }
+        if(qualifier == "in" && takenInParams.count(paramName) > 0) {
+            continue;
         }
 
         const HgiShaderSectionAttributeVector attrs {
